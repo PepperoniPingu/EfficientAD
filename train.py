@@ -14,6 +14,7 @@ def common_preprocess(image: Image) -> torch.Tensor:
     global DEVICE
     res = image.convert("RGB")
     preprocess = transforms.Compose([
+        transforms.Resize((512, 512), antialias=True),s
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         transforms.RandomGrayscale(0.1),
@@ -23,13 +24,13 @@ def common_preprocess(image: Image) -> torch.Tensor:
 
 def resnet_preprocess(image: torch.Tensor) -> torch.Tensor:
     preprocess = transforms.Compose([
-        transforms.Resize((512, 512)),
+        transforms.Resize((512, 512), antialias=True),
     ])
     return preprocess(image)
 
 def pdn_preprocess(image: torch.Tensor) -> torch.Tensor:
     preprocess = transforms.Compose([
-        transforms.Resize((512, 512)),
+        transforms.Resize((512, 512), antialias=True),
     ])
     return preprocess(image)
 
@@ -39,7 +40,7 @@ def find_distribution(model: torch.nn.Module, dataset: datasets.IterableDatasetD
     features = None
     for data in dataset["train"].take(sample_size):
         image = common_preprocess(data["image"])
-        image = resnet_preprocess(image)
+        image = resnet_preprocess(image).unsqueeze(0)
         feature_map = model(image)[-1]
         feature_map = torch.flatten(feature_map, start_dim=2)
         if features is None:
@@ -51,9 +52,12 @@ def find_distribution(model: torch.nn.Module, dataset: datasets.IterableDatasetD
     std, mean = torch.std_mean(features, dim=1)
     return std, mean
 
-def train_teacher(dataloader: DataLoader) -> torch.nn.Module:
+def main():
     global DEVICE
     global TRAINING_ITERATIONS
+
+    # if the dataset is gated/private, make sure you have run huggingface-cli login
+    dataset = datasets.load_dataset("imagenet-1k", trust_remote_code=True, streaming=True)
 
     target_features_model = timm.create_model("wide_resnet101_2", features_only=True, pretrained=True).cuda()
     # we only care about the first layer
@@ -67,26 +71,36 @@ def train_teacher(dataloader: DataLoader) -> torch.nn.Module:
     std = std.unsqueeze(1).unsqueeze(1).expand(-1, 128, 128)
     mean = mean.unsqueeze(1).unsqueeze(1).expand(-1, 128, 128)
 
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+
     teacher_pdn = models.get_pdn(channels=256).cuda()
     teacher_pdn.train()
 
     optimizer = torch.optim.Adam(teacher_pdn.parameters(), lr=1e-4, weight_decay=1e-5)
 
     print("starting training of teacher...")
-    for data, iteration in zip(dataloader, range(TRAINING_ITERATIONS)):
-        optimizer.zero_grad()
-        image = common_preprocess(data["image"])
+    image_batch = None
+    for data, iteration in zip(dataset["train"], range(TRAINING_ITERATIONS)):
 
-        target_features = target_features_model(resnet_preprocess(image).unsqueeze(0))[-1].squeeze()
-        target_features = torch.sub(target_features, mean) / std
+        image = common_preprocess(data["image"]).unsqueeze(0)
+        if image_batch is None:
+            image_batch = image
+        else:
+            image_batch = torch.cat((image_batch, image), 0)
 
-        predicted_features = teacher_pdn(pdn_preprocess(image).unsqueeze(0))[-1]
+        if (iteration + 1) % 16 == 0:
+            optimizer.zero_grad()
 
-        loss = torch.mean((target_features - predicted_features)**2) # calculate mean square error
-        print(f"iteration: {iteration}  loss: {loss.item()}")
+            target_features = target_features_model(resnet_preprocess(image_batch))[-1].squeeze()
+            target_features = torch.sub(target_features, mean) / std
 
-        loss.backward()
-        optimizer.step()
+            predicted_features = teacher_pdn(pdn_preprocess(image_batch))[-1]
+
+            loss = torch.mean((target_features - predicted_features)**2) # calculate mean square error
+            print(f"iteration: {iteration}  loss: {loss.item()}")
+
+            loss.backward()
+            optimizer.step()
 
         if iteration % 5000 == 0:
             torch.save(teacher_pdn, "models/tmp/teacher.pth")
@@ -94,23 +108,6 @@ def train_teacher(dataloader: DataLoader) -> torch.nn.Module:
     torch.save(teacher_pdn, "models/teacher.pth")
     teacher_pdn.eval()
     print("finished training teacher!")
-
-    return teacher_pdn
-
-def train_autoencoder(teacher: torch.nn.Module) -> torch.nn.Module:
-    pass
-
-def train_student(teacher: torch.nn.Module, autoencoder: torch.nn.Module) -> torch.nn.Module:
-    pass
-
-def main():
-    torch.seed(1337)
-
-    # if the dataset is gated/private, make sure you have run huggingface-cli login
-    dataset = datasets.load_dataset("imagenet-1k", trust_remote_code=True, streaming=True)
-    dataloader_train = DataLoader(dataset["train"], batch_size=16, shuffle=True)
-
-    teacher_pdn = train_teacher(dataloader_train)
 
 if __name__ == "__main__":
     main()
