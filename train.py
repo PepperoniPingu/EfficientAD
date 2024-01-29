@@ -64,7 +64,8 @@ def main():
     del target_features_model["layer2"]
     #del base_descriptions_model["layer1"][2]
 
-    std, mean = find_distribution(target_features_model, dataset, sample_size=10)
+    print("finding normal distribution of features...")
+    std, mean = find_distribution(target_features_model, dataset, sample_size=1000)
     std = std.unsqueeze(1).unsqueeze(1).expand(-1, 128, 128)
     mean = mean.unsqueeze(1).unsqueeze(1).expand(-1, 128, 128)
 
@@ -73,6 +74,7 @@ def main():
 
     optimizer = torch.optim.Adam(teacher_pdn.parameters(), lr=1e-4, weight_decay=1e-5)
 
+    print("starting training of teacher")
     for data, iteration in zip(dataset["train"].take(TRAINING_ITERATIONS), range(TRAINING_ITERATIONS)):
         optimizer.zero_grad()
         target_features = target_features_model(resnet_preprocess(data["image"]).unsqueeze(0))[-1].squeeze()
@@ -82,8 +84,11 @@ def main():
         print(f"iteration: {iteration}  loss: {loss.item()}")
         loss.backward()
         optimizer.step()
-        
 
+        if iteration % 5000 == 0:
+            torch.save(teacher_pdn, "models/tmp/teacher.pth")
+
+    torch.save(teacher_pdn, "models/teacher.pth")
 
 if __name__ == "__main__":
     main()
