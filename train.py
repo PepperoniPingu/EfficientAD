@@ -65,7 +65,7 @@ def main():
     #del base_descriptions_model["layer1"][2]
 
     print("finding normal distribution of features...")
-    std, mean = find_distribution(target_features_model, dataset, sample_size=1000)
+    std, mean = find_distribution(target_features_model, dataset, sample_size=100)
     std = std.unsqueeze(1).unsqueeze(1).expand(-1, 128, 128)
     mean = mean.unsqueeze(1).unsqueeze(1).expand(-1, 128, 128)
 
