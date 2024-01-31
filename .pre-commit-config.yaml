@@ -1,0 +1,39 @@
+---
+files: ^.*\.py
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+      - id: check-byte-order-marker
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: detect-private-key
+  - repo: https://github.com/psf/black
+    rev: 23.12.0
+    hooks:
+    - id: black
+      args:
+        - --line-length=120
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.15.0
+    hooks:
+      - id: pyupgrade
+        args:
+          - --py39-plus
+  - repo: https://github.com/myint/autoflake
+    rev: v2.2.1
+    hooks:
+      - id: autoflake
+        args:
+          - --in-place
+          - --remove-all-unused-imports
+          - --ignore-init-module-imports
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.1
+    hooks:
+      - id: isort
+        args: ["--profile", "black", "--filter-files"]
