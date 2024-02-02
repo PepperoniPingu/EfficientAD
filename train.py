@@ -198,14 +198,16 @@ def train_autoencoder(
 
     print("starting training of autoencoder...")
     for epoch in range(epochs):
-        for image_batch, batch in zip(dataloader, range(len(DataLoader))):
+        for image_batch, batch in zip(dataloader, range(len(dataloader))):
             image_batch = image_batch.to(device)
+            image_batch = distortion_preprocess(image_batch)
+
             with torch.no_grad():
                 teacher_result = teacher.forward(image_batch)
             autoencoder_result = autoencoder.forward(image_batch)
 
             loss = torch.mean((teacher_result - autoencoder_result) ** 2)
-            total_batch = batch + epoch * len(DataLoader)
+            total_batch = batch + epoch * len(dataloader)
             print(f"batch: {total_batch}/{epochs}  loss: {loss.item()}")
             if tensorboard_writer is not None:
                 tensorboard_writer.add_scalar("autoencoder training", loss.item(), total_batch)
@@ -243,8 +245,10 @@ def train_student(
 
     print("starting training of students...")
     for epoch in range(epochs):
-        for image_batch, batch in zip(dataloader, range(len(DataLoader))):
+        for image_batch, batch in zip(dataloader, range(len(dataloader))):
             image_batch = image_batch.to(device)
+            image_batch = distortion_preprocess(image_batch)
+
             with torch.no_grad():
                 teacher_result = teacher.forward(image_batch)
                 autoencoder_result = autoencoder.forward(image_batch)
@@ -255,7 +259,7 @@ def train_student(
             autoencoder_student_loss = torch.mean((autoencoder_result - student_result[channels:]) ** 2)
             total_loss = pdn_student_loss + autoencoder_student_loss
 
-            total_batch = batch + epoch * len(DataLoader)
+            total_batch = batch + epoch * len(dataloader)
             print(f"batch: {total_batch}/{epochs}  loss: {total_loss.item()}")
             if tensorboard_writer is not None:
                 tensorboard_writer.add_scalar("autoencoder training", total_loss.item(), total_batch)
