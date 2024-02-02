@@ -184,7 +184,7 @@ def train_autoencoder(
     dataset: datasets.IterableDatasetDict,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
-    epochs: int = 1000,
+    epochs: int = 5_000,
     batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
@@ -231,8 +231,8 @@ def train_student(
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
     autoencoder: torch.nn.Module,
-    epochs: int = 10,
-    batch_size: int = 4,
+    epochs: int = 5_000,
+    batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
     student_pdn = models.PatchDescriptionNetwork(channels=channels * 2).to(device)
@@ -244,7 +244,7 @@ def train_student(
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    print("starting training of students...")
+    print("starting training of student...")
     for epoch in range(epochs):
         for image_batch, batch in zip(dataloader, range(len(dataloader))):
             image_batch = image_batch.to(device)
@@ -256,23 +256,23 @@ def train_student(
 
             student_result = student_pdn.forward(image_batch)
 
-            pdn_student_loss = torch.mean((teacher_result - student_result[:channels]) ** 2)
-            autoencoder_student_loss = torch.mean((autoencoder_result - student_result[channels:]) ** 2)
+            pdn_student_loss = torch.mean((teacher_result - student_result[:,:channels, :, :]) ** 2)
+            autoencoder_student_loss = torch.mean((autoencoder_result - student_result[:, channels:, :, :]) ** 2)
             total_loss = pdn_student_loss + autoencoder_student_loss
 
             total_batch = batch + epoch * len(dataloader)
             print(f"batch: {total_batch}/{epochs * len(dataloader)}  loss: {total_loss.item()}")
             if tensorboard_writer is not None:
-                tensorboard_writer.add_scalar("autoencoder training", total_loss.item(), total_batch)
+                tensorboard_writer.add_scalar("student training", total_loss.item(), total_batch)
 
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
 
-        torch.save(autoencoder, "models/tmp/autoencoder.pth")
+        torch.save(student_pdn, "models/tmp/student.pth")
 
-    torch.save(autoencoder, "models/autoencoder.pth")
-    print("finished training autoencoder!")
+    torch.save(student_pdn, "models/student.pth")
+    print("finished training student!")
 
     return student_pdn
 
