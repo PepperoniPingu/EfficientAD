@@ -184,8 +184,8 @@ def train_autoencoder(
     dataset: datasets.IterableDatasetDict,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
-    epochs: int = 10,
-    batch_size: int = 4,
+    epochs: int = 1000,
+    batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
     autoencoder = models.AutoEncoder(channels=channels).to(device)
@@ -207,6 +207,7 @@ def train_autoencoder(
             autoencoder_result = autoencoder.forward(image_batch)
 
             loss = torch.mean((teacher_result - autoencoder_result) ** 2)
+
             total_batch = batch + epoch * len(dataloader)
             print(f"batch: {total_batch}/{epochs * len(dataloader)}  loss: {loss.item()}")
             if tensorboard_writer is not None:
