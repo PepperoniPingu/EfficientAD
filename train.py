@@ -208,7 +208,7 @@ def train_autoencoder(
 
             loss = torch.mean((teacher_result - autoencoder_result) ** 2)
             total_batch = batch + epoch * len(dataloader)
-            print(f"batch: {total_batch}/{epochs}  loss: {loss.item()}")
+            print(f"batch: {total_batch}/{epochs * len(dataloader)}  loss: {loss.item()}")
             if tensorboard_writer is not None:
                 tensorboard_writer.add_scalar("autoencoder training", loss.item(), total_batch)
 
@@ -260,7 +260,7 @@ def train_student(
             total_loss = pdn_student_loss + autoencoder_student_loss
 
             total_batch = batch + epoch * len(dataloader)
-            print(f"batch: {total_batch}/{epochs}  loss: {total_loss.item()}")
+            print(f"batch: {total_batch}/{epochs * len(dataloader)}  loss: {total_loss.item()}")
             if tensorboard_writer is not None:
                 tensorboard_writer.add_scalar("autoencoder training", total_loss.item(), total_batch)
 
