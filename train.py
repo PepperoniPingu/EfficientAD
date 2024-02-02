@@ -1,13 +1,45 @@
 import argparse
 import random
+from os import listdir
 
-import datasets
 import torch
 from PIL import Image
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
+from torchvision.io import read_image
 
+import datasets
 import models
+
+
+class MVTecLocoDataset(Dataset):
+    def __init__(self, group: str):
+        self._group = group
+        self._files = listdir("./datasets/mvtec_loco/" + self._group + "/train/good/")
+
+    def __getitem__(self, index) -> Image:
+        image = read_image("./datasets/mvtec_loco/" + self._group + "/train/good/" + self._files[index])
+        image = torch.tensor(image, dtype=torch.float32)
+        preprocess = transforms.Compose(
+            [
+                transforms.Resize((256, 256), antialias=True),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
+        return preprocess(image)
+
+    def __len__(self):
+        return len(self._files)
+
+
+def InfiniteDataloader(dataloader):
+    iterator = iter(dataloader)
+    while True:
+        try:
+            yield next(iterator)
+        except StopIteration:
+            iterator = iter(dataloader)
 
 
 def common_preprocess(image: Image, device: torch.DeviceObjType) -> torch.Tensor:
@@ -83,7 +115,7 @@ def train_teacher(
     channels: int,
     dataset: datasets.IterableDatasetDict,
     device: torch.DeviceObjType,
-    epochs: int = 10_000,
+    batches: int = 10_000,
     batch_size: int = 8,
     wideresnet_feature_layer: str = "layer1",
     wideresnet_feature_layer_index: int = 1,
@@ -109,7 +141,7 @@ def train_teacher(
 
     print("starting training of teacher...")
     image_batch = None
-    for data, iteration in zip(dataset["train"], range(batch_size * epochs)):
+    for data, iteration in zip(dataset["train"], range(batch_size * batches)):
         image = common_preprocess(data["image"], device).unsqueeze(0)
         if image_batch is None:
             image_batch = image
@@ -128,7 +160,7 @@ def train_teacher(
             )
 
             loss = torch.mean((target_features - predicted_features) ** 2)  # calculate mean square error
-            print(f"epoch: {int(iteration/batch_size)}/{epochs}  loss: {loss.item()}")
+            print(f"epoch: {int(iteration/batch_size)}/{batches}  loss: {loss.item()}")
             if tensorboard_writer is not None:
                 tensorboard_writer.add_scalar("teacher training", loss.item(), int(iteration / batch_size))
 
@@ -144,14 +176,16 @@ def train_teacher(
     torch.save(teacher_pdn, "models/teacher.pth")
     print("finished training teacher!")
 
+    return teacher_pdn
+
 
 def train_autoencoder(
     channels: int,
     dataset: datasets.IterableDatasetDict,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
-    epochs: int = 10_000,
-    batch_size: int = 8,
+    epochs: int = 10,
+    batch_size: int = 4,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
     autoencoder = models.AutoEncoder(channels=channels).to(device)
@@ -160,29 +194,32 @@ def train_autoencoder(
 
     optimizer = torch.optim.Adam(autoencoder.parameters(), lr=1e-4, weight_decay=1e-5)
 
-    for data, iteration in zip(dataset["train"], range(batch_size * epochs)):
-        image = common_preprocess(data["image"], device).unsqueeze(0)
-        image = distortion_preprocess(image)
-        if image_batch is None:
-            image_batch = image
-        else:
-            image_batch = torch.cat((image_batch, image), 0)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-        if (iteration + 1) % batch_size == 0:
+    print("starting training of autoencoder...")
+    for epoch in range(epochs):
+        for image_batch, batch in zip(dataloader, range(len(DataLoader))):
+            image_batch = image_batch.to(device)
             with torch.no_grad():
                 teacher_result = teacher.forward(image_batch)
             autoencoder_result = autoencoder.forward(image_batch)
 
             loss = torch.mean((teacher_result - autoencoder_result) ** 2)
-            print(f"epoch: {int(iteration/batch_size)}/{epochs}  loss: {loss.item()}")
+            total_batch = batch + epoch * len(DataLoader)
+            print(f"batch: {total_batch}/{epochs}  loss: {loss.item()}")
             if tensorboard_writer is not None:
-                tensorboard_writer.add_scalar("autoencoder training", loss.item(), int(iteration / batch_size))
+                tensorboard_writer.add_scalar("autoencoder training", loss.item(), total_batch)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            image_batch = None
+        torch.save(autoencoder, "models/tmp/autoencoder.pth")
+
+    torch.save(autoencoder, "models/autoencoder.pth")
+    print("finished training autoencoder!")
+
+    return autoencoder
 
 
 def train_student(
@@ -190,37 +227,49 @@ def train_student(
     dataset: datasets.IterableDatasetDict,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
-    epochs: int = 10_000,
-    batch_size: int = 8,
+    autoencoder: torch.nn.Module,
+    epochs: int = 10,
+    batch_size: int = 4,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
     student_pdn = models.PatchDescriptionNetwork(channels=channels * 2).to(device)
     student_pdn.train()
     teacher.eval()
+    autoencoder.eval()
 
     optimizer = torch.optim.Adam(student_pdn.parameters(), lr=1e-4, weight_decay=1e-5)
 
-    for data, iteration in zip(dataset["train"], range(batch_size * epochs)):
-        image = common_preprocess(data["image"], device).unsqueeze(0)
-        if image_batch is None:
-            image_batch = image
-        else:
-            image_batch = torch.cat((image_batch, image), 0)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-        if (iteration + 1) % batch_size == 0:
-            teacher_result = teacher.forward(image_batch)
+    print("starting training of students...")
+    for epoch in range(epochs):
+        for image_batch, batch in zip(dataloader, range(len(DataLoader))):
+            image_batch = image_batch.to(device)
+            with torch.no_grad():
+                teacher_result = teacher.forward(image_batch)
+                autoencoder_result = autoencoder.forward(image_batch)
+
             student_result = student_pdn.forward(image_batch)
 
-            loss = torch.mean((teacher_result - student_result) ** 2)
-            print(f"epoch: {int(iteration/batch_size)}/{epochs}  loss: {loss.item()}")
+            pdn_student_loss = torch.mean((teacher_result - student_result[:channels]) ** 2)
+            autoencoder_student_loss = torch.mean((autoencoder_result - student_result[channels:]) ** 2)
+            total_loss = pdn_student_loss + autoencoder_student_loss
+
+            total_batch = batch + epoch * len(DataLoader)
+            print(f"batch: {total_batch}/{epochs}  loss: {total_loss.item()}")
             if tensorboard_writer is not None:
-                tensorboard_writer.add_scalar("student training", loss.item(), int(iteration / batch_size))
+                tensorboard_writer.add_scalar("autoencoder training", total_loss.item(), total_batch)
 
             optimizer.zero_grad()
-            loss.backward()
+            total_loss.backward()
             optimizer.step()
 
-            image_batch = None
+        torch.save(autoencoder, "models/tmp/autoencoder.pth")
+
+    torch.save(autoencoder, "models/autoencoder.pth")
+    print("finished training autoencoder!")
+
+    return student_pdn
 
 
 def main():
@@ -242,7 +291,9 @@ def main():
     # if the dataset is gated/private, make sure you have run huggingface-cli login
     generic_dataset = datasets.load_dataset("imagenet-1k", trust_remote_code=True, streaming=True)
 
-    if not args.skip_teacher:
+    if args.skip_teacher:
+        teacher_pdn = torch.load("models/teacher_layer1_index2.pth", map_location=device)
+    else:
         teacher_pdn = train_teacher(
             channels=channels,
             dataset=generic_dataset,
@@ -252,11 +303,11 @@ def main():
         )
 
     del generic_dataset
-    good_dataset = datasets.load_dataset(
-        "imagenet-1k", trust_remote_code=True, streaming=True
-    )  # change this to another appropriate dataset
+    good_dataset = MVTecLocoDataset(group="splicing_connectors")
 
-    if not args.skip_autoencoder:
+    if args.skip_autoencoder:
+        autoencoder = torch.load("models/autoencoder.pth", map_location=device)
+    else:
         autoencoder = train_autoencoder(
             channels=channels,
             dataset=good_dataset,
@@ -271,6 +322,7 @@ def main():
             dataset=good_dataset,
             device=device,
             teacher=teacher_pdn,
+            autoencoder=autoencoder,
             tensorboard_writer=tensorboard_writer,
         )
 
