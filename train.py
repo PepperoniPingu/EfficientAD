@@ -254,20 +254,19 @@ def train_student(
             with torch.no_grad():
                 teacher_result = teacher.forward(image_batch)
                 autoencoder_result = autoencoder.forward(image_batch)
-
             student_result = student_pdn.forward(image_batch)
 
-            distance = (teacher_result - student_result[:, :channels, :, :]) ** 2
-            quantile = torch.quantile(distance, q=0.999)
-            hard_loss = torch.mean(distance[distance >= quantile])
+            pdn_student_distance = (teacher_result - student_result[:, :channels, :, :]) ** 2
+            pdn_student_quantile = torch.quantile(pdn_student_distance, q=0.999)
+            pdn_student_hard_loss = torch.mean(pdn_student_distance[pdn_student_distance >= pdn_student_quantile])
 
             generic_image = pdn_preprocess(
                 common_preprocess(generic_image["image"], device=device), resize_to=(512, 512)
             )
-            student_penalty_result = student_pdn.forward(generic_image)[:, :channels, :, :]
-            penalty_loss = torch.mean(student_penalty_result**2)
+            pdn_student_penalty_result = student_pdn.forward(generic_image)[:, :channels, :, :]
+            pdn_student_penalty_loss = torch.mean(pdn_student_penalty_result**2)
 
-            pdn_student_loss = hard_loss + penalty_loss
+            pdn_student_loss = pdn_student_hard_loss + pdn_student_penalty_loss
 
             autoencoder_student_loss = torch.mean((autoencoder_result - student_result[:, channels:, :, :]) ** 2)
             total_loss = pdn_student_loss + autoencoder_student_loss
