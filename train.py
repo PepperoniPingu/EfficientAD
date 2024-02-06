@@ -228,6 +228,7 @@ def train_autoencoder(
 def train_student(
     channels: int,
     dataset: datasets.IterableDatasetDict,
+    generic_dataset: datasets.IterableDatasetDict,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
     autoencoder: torch.nn.Module,
@@ -246,7 +247,7 @@ def train_student(
 
     print("starting training of student...")
     for epoch in range(epochs):
-        for image_batch, batch in zip(dataloader, range(len(dataloader))):
+        for image_batch, generic_image, batch in zip(dataloader, generic_dataset["train"], range(len(dataloader))):
             image_batch = image_batch.to(device)
             image_batch = distortion_preprocess(image_batch)
 
@@ -256,7 +257,16 @@ def train_student(
 
             student_result = student_pdn.forward(image_batch)
 
-            pdn_student_loss = torch.mean((teacher_result - student_result[:,:channels, :, :]) ** 2)
+            distance = (teacher_result - student_result[:, :channels, :, :]) ** 2
+            quantile = torch.quantile(distance, q=0.999)
+            hard_loss = torch.mean(distance[distance >= quantile])
+
+            generic_image = pdn_preprocess(common_preprocess(generic_image["image"], device=device).unsqueeze(0), resize_to=(512, 512))
+            student_penalty_result = student_pdn.forward(generic_image)[:, :channels, :, :]
+            penalty_loss = torch.mean(student_penalty_result ** 2)
+
+            pdn_student_loss = hard_loss + penalty_loss
+
             autoencoder_student_loss = torch.mean((autoencoder_result - student_result[:, channels:, :, :]) ** 2)
             total_loss = pdn_student_loss + autoencoder_student_loss
 
@@ -307,7 +317,6 @@ def main():
             wideresnet_feature_layer_index=0,
         )
 
-    del generic_dataset
     good_dataset = MVTecLocoDataset(group="splicing_connectors")
 
     if args.skip_autoencoder:
@@ -325,6 +334,7 @@ def main():
         student_pdn = train_student(
             channels=channels,
             dataset=good_dataset,
+            generic_dataset=generic_dataset,
             device=device,
             teacher=teacher_pdn,
             autoencoder=autoencoder,
