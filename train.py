@@ -52,7 +52,7 @@ def common_preprocess(image: Image, device: torch.DeviceObjType) -> torch.Tensor
             transforms.RandomGrayscale(0.1),
         ]
     )
-    res = preprocess(res).to(device)
+    res = preprocess(res).to(device).unsqueeze(0)
     return res
 
 
@@ -98,7 +98,7 @@ def find_distribution(
     features = None
     for data in dataset["train"].take(sample_size):
         image = common_preprocess(data["image"], device)
-        image = resnet_preprocess(image).unsqueeze(0)
+        image = resnet_preprocess(image)
         feature_map = model.forward(image)
         feature_map = torch.flatten(feature_map, start_dim=2)
         if features is None:
@@ -142,7 +142,7 @@ def train_teacher(
     print("starting training of teacher...")
     image_batch = None
     for data, iteration in zip(dataset["train"], range(batch_size * batches)):
-        image = common_preprocess(data["image"], device).unsqueeze(0)
+        image = common_preprocess(data["image"], device)
         if image_batch is None:
             image_batch = image
         else:
@@ -262,7 +262,7 @@ def train_student(
             hard_loss = torch.mean(distance[distance >= quantile])
 
             generic_image = pdn_preprocess(
-                common_preprocess(generic_image["image"], device=device).unsqueeze(0), resize_to=(512, 512)
+                common_preprocess(generic_image["image"], device=device), resize_to=(512, 512)
             )
             student_penalty_result = student_pdn.forward(generic_image)[:, :channels, :, :]
             penalty_loss = torch.mean(student_penalty_result**2)
