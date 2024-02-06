@@ -261,9 +261,11 @@ def train_student(
             quantile = torch.quantile(distance, q=0.999)
             hard_loss = torch.mean(distance[distance >= quantile])
 
-            generic_image = pdn_preprocess(common_preprocess(generic_image["image"], device=device).unsqueeze(0), resize_to=(512, 512))
+            generic_image = pdn_preprocess(
+                common_preprocess(generic_image["image"], device=device).unsqueeze(0), resize_to=(512, 512)
+            )
             student_penalty_result = student_pdn.forward(generic_image)[:, :channels, :, :]
-            penalty_loss = torch.mean(student_penalty_result ** 2)
+            penalty_loss = torch.mean(student_penalty_result**2)
 
             pdn_student_loss = hard_loss + penalty_loss
 
