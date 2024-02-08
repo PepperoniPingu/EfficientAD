@@ -8,17 +8,19 @@ from torchvision import transforms
 from torchvision.io import read_image
 
 
-class MVTecLocoDataset(Dataset):
+class MVTecDataset(Dataset):
     def __init__(
         self,
+        dataset_name: Literal["mvtec_ad", "mvtec_loco"],
         group: Literal["breakfast_box", "juice_bottle", "pushpins", "screw_bag", "splicing_connectors"],
         phase: Literal["test", "train", "validation"],
         output_size: Optional[tuple[int, int]] = None,
     ):
+        self._dataset_name = dataset_name
         self._group = group
         self._phase = phase
         self._output_size = output_size
-        self._dir = f"./dataset/mvtec_loco/{self._group}/{self._phase}/good/"
+        self._dir = f"./dataset/{self._dataset_name}/{self._group}/{self._phase}/good/"
         self._files = listdir(self._dir)
 
     def __getitem__(self, index) -> Image:

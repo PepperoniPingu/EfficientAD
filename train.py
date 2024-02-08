@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
 import models
-from dataset_misc import MVTecLocoDataset
+from dataset_misc import MVTecDataset
 
 
 def common_preprocess(image: Image, device: torch.DeviceObjType) -> torch.Tensor:
@@ -288,7 +288,9 @@ def main():
             wideresnet_feature_layer_index=0,
         )
 
-    good_dataset = MVTecLocoDataset(group="splicing_connectors", phase="train", output_size=(256, 256))
+    good_dataset = MVTecDataset(
+        dataset_name="mvtec_loco", group="splicing_connectors", phase="train", output_size=(256, 256)
+    )
 
     if args.skip_autoencoder:
         autoencoder = torch.load("models/autoencoder.pth", map_location=device)
