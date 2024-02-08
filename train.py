@@ -1,45 +1,15 @@
 import argparse
 import random
-from os import listdir
-
-import torch
-from PIL import Image
-from torch.utils.data import DataLoader, Dataset
-from torch.utils.tensorboard import SummaryWriter
-from torchvision import transforms
-from torchvision.io import read_image
 
 import datasets
+import torch
+from PIL import Image
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchvision import transforms
+
 import models
-
-
-class MVTecLocoDataset(Dataset):
-    def __init__(self, group: str):
-        self._group = group
-        self._files = listdir("./datasets/mvtec_loco/" + self._group + "/train/good/")
-
-    def __getitem__(self, index) -> Image:
-        image = read_image("./datasets/mvtec_loco/" + self._group + "/train/good/" + self._files[index])
-        image = torch.tensor(image, dtype=torch.float32)
-        preprocess = transforms.Compose(
-            [
-                transforms.Resize((256, 256), antialias=True),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ]
-        )
-        return preprocess(image)
-
-    def __len__(self):
-        return len(self._files)
-
-
-def InfiniteDataloader(dataloader):
-    iterator = iter(dataloader)
-    while True:
-        try:
-            yield next(iterator)
-        except StopIteration:
-            iterator = iter(dataloader)
+from dataset_misc import MVTecLocoDataset
 
 
 def common_preprocess(image: Image, device: torch.DeviceObjType) -> torch.Tensor:
@@ -232,7 +202,7 @@ def train_student(
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
     autoencoder: torch.nn.Module,
-    epochs: int = 5_000,
+    epochs: int = 1_300,
     batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
@@ -308,7 +278,7 @@ def main():
     generic_dataset = datasets.load_dataset("imagenet-1k", trust_remote_code=True, streaming=True)
 
     if args.skip_teacher:
-        teacher_pdn = torch.load("models/teacher_layer1_index2.pth", map_location=device)
+        teacher_pdn = torch.load("models/teacher.pth", map_location=device)
     else:
         teacher_pdn = train_teacher(
             channels=channels,
@@ -318,7 +288,7 @@ def main():
             wideresnet_feature_layer_index=0,
         )
 
-    good_dataset = MVTecLocoDataset(group="splicing_connectors")
+    good_dataset = MVTecLocoDataset(group="splicing_connectors", phase="train", output_size=(256, 256))
 
     if args.skip_autoencoder:
         autoencoder = torch.load("models/autoencoder.pth", map_location=device)
