@@ -7,7 +7,9 @@ from torchvision import transforms
 
 
 class EfficientADInferencer(torch.nn.Module):
-    def __init__(self, model_config_path: str = "model_config.yaml", device: Optional[str] = None) -> None:
+    def __init__(
+        self, model_config_path: str = "model_config.yaml", device: Optional[torch.DeviceObjType] = None
+    ) -> None:
         super().__init__()
         self._device = device
         if self._device is None:
