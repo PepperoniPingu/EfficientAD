@@ -66,7 +66,8 @@ def find_distribution(
 
 def train_teacher(
     channels: int,
-    dataset: IterableDataset,
+    generic_dataset: IterableDataset,
+    good_dataset: IterableDataset,
     device: torch.DeviceObjType,
     batches: int = 10_000,
     batch_size: int = 8,
@@ -83,7 +84,7 @@ def train_teacher(
     ).shape
 
     print("finding normal distribution of features...")
-    std, mean = find_distribution(target_features_model, dataset, device, sample_size=50)
+    std, mean = find_distribution(target_features_model, generic_dataset, device, sample_size=50)
     std = std.unsqueeze(1).unsqueeze(1).expand(target_features_output_shape)
     mean = mean.unsqueeze(1).unsqueeze(1).expand(target_features_output_shape)
 
@@ -103,7 +104,7 @@ def train_teacher(
         ]
     )
 
-    dataloader = DataLoader(TransformedIterableDataset(dataset, common_preprocess), batch_size=batch_size)
+    dataloader = DataLoader(TransformedIterableDataset(generic_dataset, common_preprocess), batch_size=batch_size)
 
     teacher_pdn = models.PatchDescriptionNetwork(channels=channels).to(device)
     teacher_pdn.train()
@@ -111,16 +112,16 @@ def train_teacher(
     optimizer = torch.optim.Adam(teacher_pdn.parameters(), lr=1e-4, weight_decay=1e-5)
 
     print("starting training of teacher...")
-    for image, batch in zip(dataloader, range(batches)):
-        image = image.to(device)
+    for image_batch, batch in zip(dataloader, range(batches)):
+        image_batch = image_batch.to(device)
 
         with torch.no_grad():
-            target_features = target_features_model.forward(resnet_preprocess(image))
+            target_features = target_features_model.forward(resnet_preprocess(image_batch))
             target_features = torch.sub(target_features, mean)
             target_features = target_features / std
             target_features = torch.nan_to_num(target_features)
 
-        predicted_features = teacher_pdn.forward(pdn_preprocess(image))
+        predicted_features = teacher_pdn.forward(pdn_preprocess(image_batch))
 
         loss = torch.mean((target_features - predicted_features) ** 2)  # calculate mean square error
         print(f"batch: {batch}/{batches}  loss: {loss.item()}")
@@ -134,8 +135,24 @@ def train_teacher(
         if batch % 1000 == 0:
             torch.save(teacher_pdn, "models/tmp/teacher.pth")
 
-    torch.save(teacher_pdn, "models/teacher.pth")
+    torch.save(teacher_pdn, "models/generic_teacher.pth")
     print("finished training teacher!")
+
+    print("normalizing teacher...")
+    preprocess = transforms.Compose(
+        [
+            transforms.Resize((512, 512), antialias=True),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+    dataloader = DataLoader(TransformedIterableDataset(good_dataset, preprocess), batch_size=batch_size)
+    teacher_pdn = models.NormalizedPatchDescriptionNetwork(teacher_pdn).train().to(device)
+    for image_batch, batch in zip(dataloader, len(dataloader)):
+        teacher_pdn.forward(image_batch)
+        print(f"batch: {batch}/{len(dataloader)}")
+
+    torch.save(teacher_pdn, "models/teacher.pth")
+    print("finished normalizing teacher!")
 
     return teacher_pdn
 
@@ -197,7 +214,7 @@ def train_autoencoder(
 def train_student(
     channels_teacher: int,
     channels_autoencoder: int,
-    dataset: IterableDataset,
+    good_dataset: IterableDataset,
     generic_dataset: IterableDataset,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
@@ -223,12 +240,12 @@ def train_student(
         ]
     )
 
-    dataloader = DataLoader(TransformedIterableDataset(dataset, preprocess), batch_size=batch_size)
+    dataloader_good = DataLoader(TransformedIterableDataset(good_dataset, preprocess), batch_size=batch_size)
     dataloader_generic = DataLoader(TransformedIterableDataset(generic_dataset, preprocess))
 
     print("starting training of student...")
     for epoch in range(epochs):
-        for image_batch, generic_image, batch in zip(dataloader, dataloader_generic, range(len(dataloader))):
+        for image_batch, generic_image, batch in zip(dataloader_good, dataloader_generic, range(len(dataloader_good))):
             image_batch = image_batch.to(device)
             image_batch = distortion_preprocess(image_batch)
             generic_image = generic_image.to(device)
@@ -252,8 +269,8 @@ def train_student(
             )
             total_loss = pdn_student_loss + autoencoder_student_loss
 
-            total_batch = batch + epoch * len(dataloader)
-            print(f"batch: {total_batch}/{epochs * len(dataloader)}  loss: {total_loss.item()}")
+            total_batch = batch + epoch * len(dataloader_good)
+            print(f"batch: {total_batch}/{epochs * len(dataloader_good)}  loss: {total_loss.item()}")
             if tensorboard_writer is not None:
                 tensorboard_writer.add_scalar("student training", total_loss.item(), total_batch)
 
@@ -304,7 +321,8 @@ def main():
     else:
         teacher_pdn = train_teacher(
             channels=model_config["out_channels"]["teacher"],
-            dataset=generic_dataset,
+            generic_dataset=generic_dataset,
+            good_dataset=good_dataset,
             device=device,
             tensorboard_writer=tensorboard_writer,
             wideresnet_feature_layer_index=0,
@@ -329,7 +347,7 @@ def main():
         student_pdn = train_student(
             channels_teacher=model_config["out_channels"]["teacher"],
             channels_autoencoder=model_config["out_channels"]["autoencoder"],
-            dataset=good_dataset,
+            good_dataset=good_dataset,
             generic_dataset=generic_dataset,
             device=device,
             teacher=teacher_pdn,

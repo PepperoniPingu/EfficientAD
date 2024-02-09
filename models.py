@@ -33,15 +33,16 @@ class ChoppedWideResNet(nn.Module):
 class PatchDescriptionNetwork(nn.Module):
     def __init__(self, channels: int) -> None:
         super().__init__()
+        self.channels = channels
 
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=128, kernel_size=4, stride=1, padding=3)
         self.avgpool_1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
         self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=1, padding=3)
         self.avgpool2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
         self.conv3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
-        self.conv4 = nn.Conv2d(in_channels=256, out_channels=channels, kernel_size=4, stride=1, padding=0)
+        self.conv4 = nn.Conv2d(in_channels=256, out_channels=self.channels, kernel_size=4, stride=1, padding=0)
 
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv1(x)
         x = nn.functional.relu(x, inplace=True)
         x = self.avgpool_1(x)
@@ -51,6 +52,19 @@ class PatchDescriptionNetwork(nn.Module):
         x = self.conv3(x)
         x = nn.functional.relu(x, inplace=True)
         x = self.conv4(x)
+        return x
+
+
+class NormalizedPatchDescriptionNetwork(nn.Module):
+    def __init__(self, pdn: PatchDescriptionNetwork) -> None:
+        super().__init__()
+
+        self.pdn = pdn
+        self.normalization = nn.BatchNorm2d(num_features=self.pdn.channels, affine=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.pdn(x)
+        x = self.normalization(x)
         return x
 
 
