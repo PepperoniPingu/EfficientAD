@@ -1,5 +1,4 @@
 import argparse
-import random
 
 import datasets
 import torch
@@ -24,19 +23,6 @@ def resnet_preprocess(image: torch.Tensor) -> torch.Tensor:
         ]
     )
     return preprocess(image)
-
-
-def distortion_preprocess(image: torch.Tensor) -> torch.Tensor:
-    distortion = random.choice([1, 2, 3])
-    factor = random.uniform(0.8, 1.2)
-    if distortion == 1:
-        distorted_image = transforms.functional.adjust_brightness(image, factor)
-    elif distortion == 2:
-        distorted_image = transforms.functional.adjust_contrast(image, factor)
-    elif distortion == 3:
-        distorted_image = transforms.functional.adjust_saturation(image, factor)
-
-    return distorted_image
 
 
 @torch.no_grad()
@@ -177,6 +163,13 @@ def train_autoencoder(
             transforms.Resize((256, 256), antialias=True),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             transforms.RandomGrayscale(0.1),
+            transforms.RandomChoice(
+                [
+                    transforms.ColorJitter(brightness=0.2),
+                    transforms.ColorJitter(contrast=0.2),
+                    transforms.ColorJitter(saturation=0.2),
+                ]
+            ),
         ]
     )
 
@@ -186,7 +179,6 @@ def train_autoencoder(
     for epoch in range(epochs):
         for image_batch, batch in zip(dataloader, range(len(dataloader))):
             image_batch = image_batch.to(device)
-            image_batch = distortion_preprocess(image_batch)
 
             with torch.no_grad():
                 teacher_result = teacher.forward(image_batch)
@@ -247,7 +239,6 @@ def train_student(
     for epoch in range(epochs):
         for image_batch, generic_image, batch in zip(dataloader_good, dataloader_generic, range(len(dataloader_good))):
             image_batch = image_batch.to(device)
-            image_batch = distortion_preprocess(image_batch)
             generic_image = generic_image.to(device)
 
             with torch.no_grad():
