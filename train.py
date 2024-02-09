@@ -157,6 +157,7 @@ def train_autoencoder(
     teacher.eval()
 
     optimizer = torch.optim.Adam(autoencoder.parameters(), lr=1e-4, weight_decay=1e-5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=int(0.95 * epochs * len(dataset)), gamma=0.1)
 
     preprocess = transforms.Compose(
         [
@@ -194,6 +195,7 @@ def train_autoencoder(
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
         torch.save(autoencoder, "models/tmp/autoencoder.pth")
 
@@ -221,6 +223,7 @@ def train_student(
     autoencoder.eval()
 
     optimizer = torch.optim.Adam(student_pdn.parameters(), lr=1e-4, weight_decay=1e-5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=int(0.95 * epochs * len(good_dataset)), gamma=0.1)
 
     preprocess = transforms.Compose(
         [
@@ -268,6 +271,7 @@ def train_student(
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
+            scheduler.step()
 
         torch.save(student_pdn, "models/tmp/student.pth")
 
