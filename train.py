@@ -328,10 +328,6 @@ def main():
             wideresnet_feature_layer_index=0,
         )
 
-    good_dataset = TensorConvertedIterableDataset(
-        MVTecIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="train")
-    )
-
     if args.skip_autoencoder:
         autoencoder = torch.load(model_config["autoencoder_path"], map_location=device)
     else:
