@@ -1,45 +1,77 @@
+import random
+from collections.abc import Iterator
 from os import listdir
-from typing import Literal, Optional
+from typing import Literal
 
 import torch
-from PIL.Image import Image
-from torch.utils.data import Dataset
+from PIL.Image import Image, open
+from torch.utils.data import IterableDataset
 from torchvision import transforms
-from torchvision.io import read_image
 
 
-class MVTecDataset(Dataset):
+class MVTecIterableDataset(IterableDataset):
     def __init__(
         self,
         dataset_name: Literal["mvtec_ad", "mvtec_loco"],
         group: Literal["breakfast_box", "juice_bottle", "pushpins", "screw_bag", "splicing_connectors"],
         phase: Literal["test", "train", "validation"],
-        output_size: Optional[tuple[int, int]] = None,
-    ):
+    ) -> None:
         self._dataset_name = dataset_name
         self._group = group
         self._phase = phase
-        self._output_size = output_size
         self._dir = f"./dataset/{self._dataset_name}/{self._group}/{self._phase}/good/"
         self._files = listdir(self._dir)
+        self._len = len(self._files)
 
-    def __getitem__(self, index) -> Image:
-        image = read_image(f"{self._dir}{self._files[index]}")
-        image = torch.tensor(image, dtype=torch.float32)
-        pipeline = [transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]
-        if self._output_size is not None:
-            pipeline.append(transforms.Resize(self._output_size, antialias=True))
-        preprocess = transforms.Compose(pipeline)
-        return preprocess(image)
+    def __iter__(self) -> Iterator[Image]:
+        while True:
+            yield open(f"{self._dir}{self._files[random.randint(0, self._len - 1)]}")
 
-    def __len__(self):
-        return len(self._files)
+    def __len__(self) -> int:
+        return self._len
 
 
-def InfiniteDataloader(dataloader):
-    iterator = iter(dataloader)
-    while True:
-        try:
-            yield next(iterator)
-        except StopIteration:
-            iterator = iter(dataloader)
+class ConvertedHuggingFaceIterableDataset(IterableDataset):
+    def __init__(self, dataset: IterableDataset) -> None:
+        self._dataset = dataset
+
+    def __iter__(self) -> Iterator[Image]:
+        while True:
+            try:
+                yield next(iter(self._dataset))["image"]
+            except Exception as err:
+                if "502 Server Error" not in err:
+                    raise
+
+    def __len__(self) -> int:
+        raise NotImplementedError
+
+
+class TensorConvertedIterableDataset(IterableDataset):
+    def __init__(self, dataset: IterableDataset) -> None:
+        self._dataset = dataset
+
+    def __iter__(self) -> Iterator[torch.Tensor]:
+        while True:
+            image = next(iter(self._dataset))
+            image = image.convert("RGB")
+            preprocess = transforms.Compose([transforms.ToTensor()])
+            yield preprocess(image)
+
+    def __len__(self) -> int:
+        return len(self._dataset)
+
+
+class TransformedIterableDataset(IterableDataset):
+    def __init__(self, dataset: IterableDataset, composed_transforms: transforms.Compose) -> None:
+        self._dataset = dataset
+        self._composed_transforms = composed_transforms
+
+    def __iter__(self) -> Iterator[torch.Tensor]:
+        while True:
+            image = next(iter(self._dataset))
+            image = self._composed_transforms(image)
+            yield image
+
+    def __len__(self) -> int:
+        return len(self._dataset)

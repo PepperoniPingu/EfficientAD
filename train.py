@@ -3,42 +3,24 @@ import random
 
 import datasets
 import torch
-from PIL import Image
-from torch.utils.data import DataLoader
+import yaml
+from torch.utils.data import DataLoader, IterableDataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
 import models
-from dataset_misc import MVTecDataset
-
-
-def common_preprocess(image: Image, device: torch.DeviceObjType) -> torch.Tensor:
-    res = image.convert("RGB")
-    preprocess = transforms.Compose(
-        [
-            transforms.Resize((512, 512), antialias=True),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            transforms.RandomGrayscale(0.1),
-        ]
-    )
-    res = preprocess(res).to(device).unsqueeze(0)
-    return res
+from dataset_misc import (
+    ConvertedHuggingFaceIterableDataset,
+    MVTecIterableDataset,
+    TensorConvertedIterableDataset,
+    TransformedIterableDataset,
+)
 
 
 def resnet_preprocess(image: torch.Tensor) -> torch.Tensor:
     preprocess = transforms.Compose(
         [
             transforms.Resize((512, 512), antialias=True),
-        ]
-    )
-    return preprocess(image)
-
-
-def pdn_preprocess(image: torch.Tensor, resize_to: tuple[int, int]) -> torch.Tensor:
-    preprocess = transforms.Compose(
-        [
-            transforms.Resize(resize_to, antialias=True),
         ]
     )
     return preprocess(image)
@@ -60,30 +42,31 @@ def distortion_preprocess(image: torch.Tensor) -> torch.Tensor:
 @torch.no_grad()
 def find_distribution(
     model: torch.nn.Module,
-    dataset: datasets.IterableDatasetDict,
+    dataset: IterableDataset,
     device: torch.DeviceObjType,
-    sample_size: int = 10_000,
+    sample_size: int = 100,
 ) -> tuple:
     # find gaussian distribution of features
-    features = None
-    for data in dataset["train"].take(sample_size):
-        image = common_preprocess(data["image"], device)
-        image = resnet_preprocess(image)
-        feature_map = model.forward(image)
-        feature_map = torch.flatten(feature_map, start_dim=2)
-        if features is None:
-            features = feature_map
-        else:
-            features = torch.cat((features, feature_map), 0)
+    preprocess = transforms.Compose(
+        [
+            transforms.Resize((512, 512), antialias=True),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+    dataloader = DataLoader(TransformedIterableDataset(dataset, preprocess), batch_size=sample_size)
+
+    batch = next(iter(dataloader)).to(device)
+    features = model.forward(batch)
     features = torch.movedim(features, 0, 1)
     features = torch.flatten(features, start_dim=1)
-    std, mean = torch.std_mean(features, dim=1)
+    std, mean = torch.std_mean(features, dim=1, unbiased=False)
+
     return std, mean
 
 
 def train_teacher(
     channels: int,
-    dataset: datasets.IterableDatasetDict,
+    dataset: IterableDataset,
     device: torch.DeviceObjType,
     batches: int = 10_000,
     batch_size: int = 8,
@@ -104,43 +87,51 @@ def train_teacher(
     std = std.unsqueeze(1).unsqueeze(1).expand(target_features_output_shape)
     mean = mean.unsqueeze(1).unsqueeze(1).expand(target_features_output_shape)
 
+    common_preprocess = transforms.Compose(
+        [
+            transforms.Resize((512, 512), antialias=True),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.RandomGrayscale(0.1),
+        ]
+    )
+
+    pdn_preprocess = transforms.Compose(
+        [
+            transforms.Resize(
+                (target_features_output_shape[2] * 4, target_features_output_shape[3] * 4), antialias=True
+            ),
+        ]
+    )
+
+    dataloader = DataLoader(TransformedIterableDataset(dataset, common_preprocess), batch_size=batch_size)
+
     teacher_pdn = models.PatchDescriptionNetwork(channels=channels).to(device)
     teacher_pdn.train()
 
     optimizer = torch.optim.Adam(teacher_pdn.parameters(), lr=1e-4, weight_decay=1e-5)
 
     print("starting training of teacher...")
-    image_batch = None
-    for data, iteration in zip(dataset["train"], range(batch_size * batches)):
-        image = common_preprocess(data["image"], device)
-        if image_batch is None:
-            image_batch = image
-        else:
-            image_batch = torch.cat((image_batch, image), 0)
+    for image, batch in zip(dataloader, range(batches)):
+        image = image.to(device)
 
-        if (iteration + 1) % batch_size == 0:
-            with torch.no_grad():
-                target_features = target_features_model.forward(resnet_preprocess(image_batch))
-                target_features = torch.sub(target_features, mean)
-                target_features = target_features / std
-                target_features = torch.nan_to_num(target_features)
+        with torch.no_grad():
+            target_features = target_features_model.forward(resnet_preprocess(image))
+            target_features = torch.sub(target_features, mean)
+            target_features = target_features / std
+            target_features = torch.nan_to_num(target_features)
 
-            predicted_features = teacher_pdn.forward(
-                pdn_preprocess(image_batch, (target_features_output_shape[2] * 4, target_features_output_shape[3] * 4))
-            )
+        predicted_features = teacher_pdn.forward(pdn_preprocess(image))
 
-            loss = torch.mean((target_features - predicted_features) ** 2)  # calculate mean square error
-            print(f"epoch: {int(iteration/batch_size)}/{batches}  loss: {loss.item()}")
-            if tensorboard_writer is not None:
-                tensorboard_writer.add_scalar("teacher training", loss.item(), int(iteration / batch_size))
+        loss = torch.mean((target_features - predicted_features) ** 2)  # calculate mean square error
+        print(f"batch: {batch}/{batches}  loss: {loss.item()}")
+        if tensorboard_writer is not None:
+            tensorboard_writer.add_scalar("teacher training", loss.item(), batch)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-            image_batch = None
-
-        if iteration % 5000 == 0:
+        if batch % 1000 == 0:
             torch.save(teacher_pdn, "models/tmp/teacher.pth")
 
     torch.save(teacher_pdn, "models/teacher.pth")
@@ -151,7 +142,7 @@ def train_teacher(
 
 def train_autoencoder(
     channels: int,
-    dataset: datasets.IterableDatasetDict,
+    dataset: IterableDataset,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
     epochs: int = 5_000,
@@ -164,7 +155,15 @@ def train_autoencoder(
 
     optimizer = torch.optim.Adam(autoencoder.parameters(), lr=1e-4, weight_decay=1e-5)
 
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    preprocess = transforms.Compose(
+        [
+            transforms.Resize((256, 256), antialias=True),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.RandomGrayscale(0.1),
+        ]
+    )
+
+    dataloader = DataLoader(TransformedIterableDataset(dataset, preprocess), batch_size=batch_size)
 
     print("starting training of autoencoder...")
     for epoch in range(epochs):
@@ -196,9 +195,10 @@ def train_autoencoder(
 
 
 def train_student(
-    channels: int,
-    dataset: datasets.IterableDatasetDict,
-    generic_dataset: datasets.IterableDatasetDict,
+    channels_teacher: int,
+    channels_autoencoder: int,
+    dataset: IterableDataset,
+    generic_dataset: IterableDataset,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
     autoencoder: torch.nn.Module,
@@ -206,39 +206,50 @@ def train_student(
     batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
-    student_pdn = models.PatchDescriptionNetwork(channels=channels * 2).to(device)
+    student_pdn = models.PatchDescriptionNetwork(channels=channels_teacher + channels_autoencoder).to(device)
     student_pdn.train()
     teacher.eval()
     autoencoder.eval()
 
     optimizer = torch.optim.Adam(student_pdn.parameters(), lr=1e-4, weight_decay=1e-5)
 
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    preprocess = transforms.Compose(
+        [
+            transforms.Resize(
+                (256, 256), antialias=True
+            ),  # quantile will not work with 512x512, TODO: sample random values for quantile calculation
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.RandomGrayscale(0.1),
+        ]
+    )
+
+    dataloader = DataLoader(TransformedIterableDataset(dataset, preprocess), batch_size=batch_size)
+    dataloader_generic = DataLoader(TransformedIterableDataset(generic_dataset, preprocess))
 
     print("starting training of student...")
     for epoch in range(epochs):
-        for image_batch, generic_image, batch in zip(dataloader, generic_dataset["train"], range(len(dataloader))):
+        for image_batch, generic_image, batch in zip(dataloader, dataloader_generic, range(len(dataloader))):
             image_batch = image_batch.to(device)
             image_batch = distortion_preprocess(image_batch)
+            generic_image = generic_image.to(device)
 
             with torch.no_grad():
                 teacher_result = teacher.forward(image_batch)
                 autoencoder_result = autoencoder.forward(image_batch)
             student_result = student_pdn.forward(image_batch)
 
-            pdn_student_distance = (teacher_result - student_result[:, :channels, :, :]) ** 2
+            pdn_student_distance = (teacher_result - student_result[:, :channels_teacher, :, :]) ** 2
             pdn_student_quantile = torch.quantile(pdn_student_distance, q=0.999)
             pdn_student_hard_loss = torch.mean(pdn_student_distance[pdn_student_distance >= pdn_student_quantile])
 
-            generic_image = pdn_preprocess(
-                common_preprocess(generic_image["image"], device=device), resize_to=(512, 512)
-            )
-            pdn_student_penalty_result = student_pdn.forward(generic_image)[:, :channels, :, :]
+            pdn_student_penalty_result = student_pdn.forward(generic_image)[:, :channels_teacher, :, :]
             pdn_student_penalty_loss = torch.mean(pdn_student_penalty_result**2)
 
             pdn_student_loss = pdn_student_hard_loss + pdn_student_penalty_loss
 
-            autoencoder_student_loss = torch.mean((autoencoder_result - student_result[:, channels:, :, :]) ** 2)
+            autoencoder_student_loss = torch.mean(
+                (autoencoder_result - student_result[:, channels_teacher:, :, :]) ** 2
+            )
             total_loss = pdn_student_loss + autoencoder_student_loss
 
             total_batch = batch + epoch * len(dataloader)
@@ -261,42 +272,53 @@ def train_student(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--device", choices=["cpu", "cuda"])
-    parser.add_argument("--skip_teacher", action="store_true", default=False)
-    parser.add_argument("--skip_autoencoder", action="store_true", default=False)
-    parser.add_argument("--skip_student", action="store_true", default=False)
+    parser.add_argument("--skip-teacher", action="store_true", default=False)
+    parser.add_argument("--skip-autoencoder", action="store_true", default=False)
+    parser.add_argument("--skip-student", action="store_true", default=False)
+    parser.add_argument("--model-config", action="store", default="model_config.yaml")
     args = parser.parse_args()
     if args.device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     else:
         device = args.device
 
-    channels = 256
-
     tensorboard_writer = SummaryWriter()
 
+    torch.manual_seed(1337)
+
+    with open(args.model_config) as config_file:
+        model_config = yaml.safe_load(config_file)
+
     # if the dataset is gated/private, make sure you have run huggingface-cli login
-    generic_dataset = datasets.load_dataset("imagenet-1k", trust_remote_code=True, streaming=True)
+    generic_dataset = TensorConvertedIterableDataset(
+        ConvertedHuggingFaceIterableDataset(
+            datasets.load_dataset("imagenet-1k", trust_remote_code=True, streaming=True)["train"]
+        )
+    )
+    good_dataset = TensorConvertedIterableDataset(
+        MVTecIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="train")
+    )
 
     if args.skip_teacher:
-        teacher_pdn = torch.load("models/teacher.pth", map_location=device)
+        teacher_pdn = torch.load(model_config["teacher_path"], map_location=device)
     else:
         teacher_pdn = train_teacher(
-            channels=channels,
+            channels=model_config["out_channels"]["teacher"],
             dataset=generic_dataset,
             device=device,
             tensorboard_writer=tensorboard_writer,
             wideresnet_feature_layer_index=0,
         )
 
-    good_dataset = MVTecDataset(
-        dataset_name="mvtec_loco", group="splicing_connectors", phase="train", output_size=(256, 256)
+    good_dataset = TensorConvertedIterableDataset(
+        MVTecIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="train")
     )
 
     if args.skip_autoencoder:
-        autoencoder = torch.load("models/autoencoder.pth", map_location=device)
+        autoencoder = torch.load(model_config["autoencoder_path"], map_location=device)
     else:
         autoencoder = train_autoencoder(
-            channels=channels,
+            channels=model_config["out_channels"]["autoencoder"],
             dataset=good_dataset,
             device=device,
             teacher=teacher_pdn,
@@ -305,7 +327,8 @@ def main():
 
     if not args.skip_student:
         student_pdn = train_student(
-            channels=channels,
+            channels_teacher=model_config["out_channels"]["teacher"],
+            channels_autoencoder=model_config["out_channels"]["autoencoder"],
             dataset=good_dataset,
             generic_dataset=generic_dataset,
             device=device,
