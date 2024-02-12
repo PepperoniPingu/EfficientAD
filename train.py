@@ -55,7 +55,7 @@ def train_teacher(
     generic_dataset: IterableDataset,
     good_dataset: IterableDataset,
     device: torch.DeviceObjType,
-    batches: int = 10_000,
+    batches: int = 15_000,
     batch_size: int = 8,
     wideresnet_feature_layer: str = "layer1",
     wideresnet_feature_layer_index: int = 1,

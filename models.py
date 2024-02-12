@@ -60,7 +60,7 @@ class NormalizedPatchDescriptionNetwork(nn.Module):
         super().__init__()
 
         self.pdn = pdn
-        self.normalization = nn.BatchNorm2d(num_features=self.pdn.channels, affine=False)
+        self.normalization = nn.BatchNorm2d(num_features=256, affine=False)  # self.pdn.channels
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.pdn(x)
