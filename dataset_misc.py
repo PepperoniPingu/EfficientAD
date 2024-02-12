@@ -40,7 +40,7 @@ class ConvertedHuggingFaceIterableDataset(IterableDataset):
             try:
                 yield next(iter(self._dataset))["image"]
             except Exception as err:
-                if "502 Server Error" not in err:
+                if "Server Error" not in str(err):
                     raise
 
     def __len__(self) -> int:
