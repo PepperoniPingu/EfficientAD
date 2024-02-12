@@ -5,7 +5,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, IterableDataset
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 
 import models
 from dataset_misc import (

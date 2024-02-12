@@ -6,7 +6,7 @@ from typing import Literal
 import torch
 from PIL.Image import Image, open
 from torch.utils.data import IterableDataset
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 
 
 class MVTecIterableDataset(IterableDataset):

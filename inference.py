@@ -3,7 +3,7 @@ from typing import Optional, Union
 import torch
 import yaml
 from PIL.Image import Image
-from torchvision import transforms
+from torchvision.transforms import v2 as transforms
 
 
 class EfficientADInferencer(torch.nn.Module):
