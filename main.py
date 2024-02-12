@@ -1,11 +1,31 @@
+import argparse
+
+import torch
 import torchshow
 
-from dataset_misc import MVTecIterableDataset
+from dataset_misc import MVTecIterableDataset, TensorConvertedIterableDataset
 from inference import EfficientADInferencer
 
-efficientad = EfficientADInferencer()
 
-dataset = MVTecIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="test")
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--device", choices=["cpu", "cuda"])
+    args = parser.parse_args()
+    if args.device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = args.device
 
-result = efficientad.forward(dataset[0])
-torchshow.show(result)
+    efficientad = EfficientADInferencer(device=device)
+
+    dataset = TensorConvertedIterableDataset(
+        MVTecIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="test")
+    )
+
+    anomaly_map, score = efficientad.forward(next(iter(dataset)))
+    print(score)
+    torchshow.show(anomaly_map)
+
+
+if __name__ == "__main__":
+    main()

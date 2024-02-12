@@ -50,6 +50,60 @@ def find_distribution(
     return std, mean
 
 
+@torch.no_grad()
+def find_quantiles(
+    teacher: torch.nn.Module,
+    autoencoder: torch.nn.Module,
+    student: torch.nn.Module,
+    teacher_channels: int,
+    dataset: IterableDataset,
+    device: torch.DeviceObjType,
+    sample_size: int = 1000,
+) -> None:
+    teacher.eval()
+    autoencoder.eval()
+    student.eval()
+
+    preprocess = transforms.Compose(
+        [
+            transforms.Resize((256, 256), antialias=True),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+    dataloader = DataLoader(TransformedIterableDataset(dataset, preprocess), batch_size=1)
+
+    student_anomaly_maps = torch.empty((0, 64, 64), device=device)
+    autoencoder_anomaly_maps = torch.empty((0, 64, 64), device=device)
+    print("determining quantiles...")
+    for image, i in zip(dataloader, range(sample_size)):
+        image = image.to(device)
+        teacher_result = teacher.forward(image)
+        autoencoder_result = autoencoder.forward(image)
+        student_result = student.forward(image)
+
+        student_anomaly_map = torch.mean((teacher_result - student_result[:, :teacher_channels, :, :]) ** 2, dim=1)
+        autoencoder_anomaly_map = torch.mean(
+            (autoencoder_result - student_result[:, teacher_channels:, :, :]) ** 2,
+            dim=1,
+        )
+
+        student_anomaly_maps = torch.cat((student_anomaly_maps, student_anomaly_map), dim=0)
+        autoencoder_anomaly_maps = torch.cat((autoencoder_anomaly_maps, autoencoder_anomaly_map), dim=0)
+
+        print(f"iteration: {i}/{sample_size}")
+
+    quantiles = {
+        "student_a": torch.quantile(student_anomaly_maps, q=0.9),
+        "student_b": torch.quantile(student_anomaly_maps, q=0.995),
+        "autoencoder_a": torch.quantile(autoencoder_anomaly_maps, q=0.9),
+        "autoencoder_b": torch.quantile(autoencoder_anomaly_maps, q=0.995),
+    }
+
+    torch.save(quantiles, "models/quantiles.pt")
+
+    print("finished determining quantiles!")
+
+
 def train_teacher(
     channels: int,
     generic_dataset: IterableDataset,
@@ -287,6 +341,7 @@ def main():
     parser.add_argument("--skip-teacher", action="store_true", default=False)
     parser.add_argument("--skip-autoencoder", action="store_true", default=False)
     parser.add_argument("--skip-student", action="store_true", default=False)
+    parser.add_argument("--skip-quantiles", action="store_true", default=False)
     parser.add_argument("--model-config", action="store", default="model_config.yaml")
     args = parser.parse_args()
     if args.device is None:
@@ -334,7 +389,9 @@ def main():
             tensorboard_writer=tensorboard_writer,
         )
 
-    if not args.skip_student:
+    if args.skip_student:
+        student_pdn = torch.load(model_config["student_path"], map_location=device)
+    else:
         student_pdn = train_student(
             channels_teacher=model_config["out_channels"]["teacher"],
             channels_autoencoder=model_config["out_channels"]["autoencoder"],
@@ -344,6 +401,16 @@ def main():
             teacher=teacher_pdn,
             autoencoder=autoencoder,
             tensorboard_writer=tensorboard_writer,
+        )
+
+    if not args.skip_quantiles:
+        find_quantiles(
+            teacher=teacher_pdn,
+            autoencoder=autoencoder,
+            student=student_pdn,
+            teacher_channels=model_config["out_channels"]["teacher"],
+            dataset=good_dataset,
+            device=device,
         )
 
     tensorboard_writer.close()
