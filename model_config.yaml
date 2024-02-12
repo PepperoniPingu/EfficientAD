@@ -1,6 +1,6 @@
-teacher_path: "models/teacher.pth"
-autoencoder_path: "models/autoencoder.pth"
-student_path: "models/student.pth"
+teacher_path: "models/teacher.pt"
+autoencoder_path: "models/autoencoder.pt"
+student_path: "models/student.pt"
 out_channels:
   teacher: 256
   autoencoder: 256

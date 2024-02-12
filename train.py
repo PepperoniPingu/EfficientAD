@@ -119,9 +119,9 @@ def train_teacher(
         optimizer.step()
 
         if batch % 1000 == 0:
-            torch.save(teacher_pdn, "models/tmp/teacher.pth")
+            torch.save(teacher_pdn, "models/tmp/teacher.pt")
 
-    torch.save(teacher_pdn, "models/generic_teacher.pth")
+    torch.save(teacher_pdn, "models/generic_teacher.pt")
     print("finished training teacher!")
 
     print("normalizing teacher...")
@@ -137,7 +137,7 @@ def train_teacher(
         teacher_pdn.forward(image_batch)
         print(f"batch: {batch}/{len(dataloader)}")
 
-    torch.save(teacher_pdn, "models/teacher.pth")
+    torch.save(teacher_pdn, "models/teacher.pt")
     print("finished normalizing teacher!")
 
     return teacher_pdn
@@ -197,9 +197,9 @@ def train_autoencoder(
             optimizer.step()
             scheduler.step()
 
-        torch.save(autoencoder, "models/tmp/autoencoder.pth")
+        torch.save(autoencoder, "models/tmp/autoencoder.pt")
 
-    torch.save(autoencoder, "models/autoencoder.pth")
+    torch.save(autoencoder, "models/autoencoder.pt")
     print("finished training autoencoder!")
 
     return autoencoder
@@ -273,9 +273,9 @@ def train_student(
             optimizer.step()
             scheduler.step()
 
-        torch.save(student_pdn, "models/tmp/student.pth")
+        torch.save(student_pdn, "models/tmp/student.pt")
 
-    torch.save(student_pdn, "models/student.pth")
+    torch.save(student_pdn, "models/student.pt")
     print("finished training student!")
 
     return student_pdn
