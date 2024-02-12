@@ -148,7 +148,7 @@ def train_autoencoder(
     dataset: IterableDataset,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
-    epochs: int = 5_000,
+    epochs: int = 10_000,
     batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
