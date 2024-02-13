@@ -69,8 +69,9 @@ class NormalizedPatchDescriptionNetwork(nn.Module):
 
 
 class AutoEncoder(nn.Module):
-    def __init__(self, channels: int) -> None:
+    def __init__(self, channels: int, output_size: tuple[int, int] = (64, 64)) -> None:
         super().__init__()
+        self._output_size = output_size
 
         # encoding
         self.enc_conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=4, stride=2, padding=1)
@@ -135,7 +136,7 @@ class AutoEncoder(nn.Module):
         x = self.dec_conv6(x)
         x = nn.functional.relu(x, inplace=True)
         x = self.dec_dropout6(x)
-        x = nn.functional.interpolate(x, size=64, mode="bilinear")
+        x = nn.functional.interpolate(x, size=self._output_size, mode="bilinear")
         x = self.dec_conv7(x)
         x = nn.functional.relu(x, inplace=True)
         x = self.dec_conv8(x)

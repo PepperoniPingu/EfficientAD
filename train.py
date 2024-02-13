@@ -199,14 +199,15 @@ def train_teacher(
 
 def train_autoencoder(
     channels: int,
+    output_size: tuple[int, int],
     dataset: IterableDataset,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
-    epochs: int = 10_000,
+    epochs: int = 1_000,
     batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
-    autoencoder = models.AutoEncoder(channels=channels).to(device)
+    autoencoder = models.AutoEncoder(channels=channels, output_size=output_size).to(device)
     autoencoder.train()
     teacher.eval()
 
@@ -215,7 +216,7 @@ def train_autoencoder(
 
     preprocess = transforms.Compose(
         [
-            transforms.Resize((256, 256), antialias=True),
+            transforms.Resize((output_size[0] * 4, output_size[1] * 4), antialias=True),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             transforms.RandomGrayscale(0.1),
             transforms.RandomChoice(
@@ -383,6 +384,10 @@ def main():
     else:
         autoencoder = train_autoencoder(
             channels=model_config["out_channels"]["autoencoder"],
+            output_size=(
+                model_config["autoencoder_out_resolution"]["width"],
+                model_config["autoencoder_out_resolution"]["height"],
+            ),
             dataset=good_dataset,
             device=device,
             teacher=teacher_pdn,

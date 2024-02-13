@@ -2,6 +2,12 @@ teacher_path: "models/teacher.pt"
 autoencoder_path: "models/autoencoder.pt"
 student_path: "models/student.pt"
 quantiles_path: "models/quantiles.pt"
+
+# pdn divides input size by 4
+out_resolution:
+  width: 64 #128
+  height: 64 #72
+
 out_channels:
   teacher: 256
   autoencoder: 256
