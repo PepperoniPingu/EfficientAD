@@ -385,8 +385,8 @@ def main():
         autoencoder = train_autoencoder(
             channels=model_config["out_channels"]["autoencoder"],
             output_size=(
-                model_config["autoencoder_out_resolution"]["width"],
-                model_config["autoencoder_out_resolution"]["height"],
+                model_config["out_resolution"]["width"],
+                model_config["out_resolution"]["height"],
             ),
             dataset=good_dataset,
             device=device,
