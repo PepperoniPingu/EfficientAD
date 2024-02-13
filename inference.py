@@ -64,3 +64,14 @@ class EfficientADInferencer(torch.nn.Module):
         )
         res = preprocess(input).unsqueeze(0)
         return res
+
+    def create_heat_map(self, image: Union[torch.Tensor, Image], anomaly_map: torch.Tensor) -> torch.Tensor:
+        image = torch.as_tensor(image, device=self._device)
+        image = image * 0.5
+        anomaly_map = transforms.functional.resize(anomaly_map, size=(image.shape[1], image.shape[2]))
+        anomaly_map_r = anomaly_map
+        anomaly_map_g = anomaly_map * 0
+        anomaly_map_b = anomaly_map * 0
+        anomaly_map = torch.cat([anomaly_map_r, anomaly_map_g, anomaly_map_b], dim=0)
+        heat_map = (image + anomaly_map) / 2
+        return heat_map

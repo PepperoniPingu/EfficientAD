@@ -22,9 +22,11 @@ def main() -> None:
         MVTecLOCOIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="test", sorting="good")
     )
 
-    anomaly_map, score = efficientad.forward(next(iter(dataset)))
-    print(score)
-    torchshow.show(anomaly_map)
+    for image in dataset:
+        anomaly_map, score = efficientad.forward(image)
+        print(score)
+        heat_map = efficientad.create_heat_map(image=image, anomaly_map=anomaly_map)
+        torchshow.show(heat_map)
 
 
 if __name__ == "__main__":
