@@ -3,7 +3,7 @@ import argparse
 import torch
 import torchshow
 
-from dataset_misc import MVTecIterableDataset, TensorConvertedIterableDataset
+from dataset_misc import MVTecLOCOIterableDataset, TensorConvertedIterableDataset
 from inference import EfficientADInferencer
 
 
@@ -19,7 +19,7 @@ def main() -> None:
     efficientad = EfficientADInferencer(device=device)
 
     dataset = TensorConvertedIterableDataset(
-        MVTecIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="test")
+        MVTecLOCOIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="test", sorting="good")
     )
 
     anomaly_map, score = efficientad.forward(next(iter(dataset)))

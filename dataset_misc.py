@@ -9,17 +9,19 @@ from torch.utils.data import IterableDataset
 from torchvision.transforms import v2 as transforms
 
 
-class MVTecIterableDataset(IterableDataset):
+class MVTecLOCOIterableDataset(IterableDataset):
     def __init__(
         self,
         dataset_name: Literal["mvtec_ad", "mvtec_loco"],
         group: Literal["breakfast_box", "juice_bottle", "pushpins", "screw_bag", "splicing_connectors"],
         phase: Literal["test", "train", "validation"],
+        sorting: str,
     ) -> None:
         self._dataset_name = dataset_name
         self._group = group
         self._phase = phase
-        self._dir = f"./dataset/{self._dataset_name}/{self._group}/{self._phase}/good/"
+        self._sorting = sorting
+        self._dir = f"./dataset/{self._dataset_name}/{self._group}/{self._phase}/{self._sorting}/"
         self._files = listdir(self._dir)
         self._len = len(self._files)
 

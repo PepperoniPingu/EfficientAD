@@ -10,7 +10,7 @@ from torchvision.transforms import v2 as transforms
 import models
 from dataset_misc import (
     ConvertedHuggingFaceIterableDataset,
-    MVTecIterableDataset,
+    MVTecLOCOIterableDataset,
     TensorConvertedIterableDataset,
     TransformedIterableDataset,
 )
@@ -363,7 +363,7 @@ def main():
         )
     )
     good_dataset = TensorConvertedIterableDataset(
-        MVTecIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="train")
+        MVTecLOCOIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="train", sorting="good")
     )
 
     if args.skip_teacher:
