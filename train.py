@@ -187,9 +187,9 @@ def train_teacher(
     )
     dataloader = DataLoader(TransformedIterableDataset(good_dataset, preprocess), batch_size=batch_size)
     teacher_pdn = models.NormalizedPatchDescriptionNetwork(teacher_pdn).train().to(device)
-    for image_batch, batch in zip(dataloader, len(dataloader)):
-        teacher_pdn.forward(image_batch)
-        print(f"batch: {batch}/{len(dataloader)}")
+    for image_batch, i in zip(dataloader, range(int(5_000 / batch_size))):
+        teacher_pdn.forward(image_batch.to(device))
+        print(f"batch: {i}/{int(5_000 / batch_size)}")
 
     torch.save(teacher_pdn, "models/teacher.pt")
     print("finished normalizing teacher!")
