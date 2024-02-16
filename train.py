@@ -376,7 +376,7 @@ def main():
             good_dataset=good_dataset,
             device=device,
             tensorboard_writer=tensorboard_writer,
-            wideresnet_feature_layer_index=0,
+            wideresnet_feature_layer_index=1,
         )
 
     if args.skip_autoencoder:
