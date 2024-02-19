@@ -109,7 +109,7 @@ def train_teacher(
     generic_dataset: IterableDataset,
     good_dataset: IterableDataset,
     device: torch.DeviceObjType,
-    batches: int = 15_000,
+    batches: int = 30_000,
     batch_size: int = 8,
     wideresnet_feature_layer: str = "layer1",
     wideresnet_feature_layer_index: int = 1,
@@ -203,7 +203,7 @@ def train_autoencoder(
     dataset: IterableDataset,
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
-    epochs: int = 1_000,
+    epochs: int = 2_000,
     batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
@@ -268,7 +268,7 @@ def train_student(
     device: torch.DeviceObjType,
     teacher: torch.nn.Module,
     autoencoder: torch.nn.Module,
-    epochs: int = 1_300,
+    epochs: int = 3_000,
     batch_size: int = 8,
     tensorboard_writer: SummaryWriter | None = None,
 ) -> torch.nn.Module:
@@ -376,7 +376,7 @@ def main():
             good_dataset=good_dataset,
             device=device,
             tensorboard_writer=tensorboard_writer,
-            wideresnet_feature_layer_index=1,
+            wideresnet_feature_layer_index=2,
         )
 
     if args.skip_autoencoder:

@@ -1,0 +1,13 @@
+teacher_path: "models/layer1_index2/teacher.pt"
+autoencoder_path: "models/layer1_index2/autoencoder.pt"
+student_path: "models/layer1_index2/student.pt"
+quantiles_path: "models/layer1_index2/quantiles.pt"
+
+# pdn divides input size by 4
+out_resolution:
+  width: 64 #128
+  height: 64 #72
+
+out_channels:
+  teacher: 256
+  autoencoder: 256
