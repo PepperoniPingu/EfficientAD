@@ -1,2 +1,8 @@
-venv
+# python crap
 __pycache__
+
+# python env
+env/*-env
+
+# nix direnv
+.direnv
