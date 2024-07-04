@@ -19,6 +19,7 @@
             pkgs.python311
             pkgs.python311Packages.pip
             pkgs.python311Packages.pandas
+            pkgs.python311Packages.tensorboard
             pkgs.python311Packages.torch-bin
             pkgs.python311Packages.torchvision-bin
           ];

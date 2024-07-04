@@ -1,4 +1,4 @@
-.PHONY: inference train dataset huggingface-login
+.PHONY: inference train dataset huggingface-login tensorboard
 
 inference:
 	python main.py
@@ -11,3 +11,6 @@ dataset:
 
 huggingface-login:
 	huggingface-cli login
+
+tensorboard:
+	tensorboard --logdir=runs
