@@ -349,6 +349,7 @@ def main():
         device = "cuda" if torch.cuda.is_available() else "cpu"
     else:
         device = args.device
+    print(f"using {device}")
 
     tensorboard_writer = SummaryWriter()
 
@@ -358,11 +359,14 @@ def main():
         model_config = yaml.safe_load(config_file)
 
     # if the dataset is gated/private, make sure you have run huggingface-cli login
-    generic_dataset = TensorConvertedIterableDataset(
-        ConvertedHuggingFaceIterableDataset(
-            datasets.load_dataset("imagenet-1k", trust_remote_code=True, streaming=True)["train"]
+    try:
+        generic_dataset = TensorConvertedIterableDataset(
+            ConvertedHuggingFaceIterableDataset(
+                datasets.load_dataset("imagenet-1k", trust_remote_code=True, streaming=True)["train"]
+            )
         )
-    )
+    except datasets.exceptions.DatasetNotFoundError:
+        raise Exception("huggingface missing token. run 'huggingface-cli login'")
     good_dataset = TensorConvertedIterableDataset(
         MVTecLOCOIterableDataset(dataset_name="mvtec_loco", group="splicing_connectors", phase="train", sorting="good")
     )
